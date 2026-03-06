@@ -14,10 +14,12 @@ def user_menu():
     kb = [
         [KeyboardButton(text="💰 Создать заявку на выкуп")],
         [KeyboardButton(text="📋 Мои заявки")],
+        [KeyboardButton(text="⭐ Избранное")],
         [KeyboardButton(text="🔔 Мои подписки")],
         [KeyboardButton(text="💸 Реферальная программа")],
         [KeyboardButton(text="💰 Мой кошелек")],
         [KeyboardButton(text="🛍 Купить технику")],
+        [KeyboardButton(text="🆘 Техподдержка")],
         [KeyboardButton(text="🔙 Главное меню")]
     ]
     return ReplyKeyboardMarkup(keyboard=kb, resize_keyboard=True)
@@ -28,10 +30,13 @@ def reseller_menu():
         [KeyboardButton(text="🏷 Мои объявления")],
         [KeyboardButton(text="➕ Создать объявление")],
         [KeyboardButton(text="📝 Мои отзывы")],
+        [KeyboardButton(text="⭐ Избранное")],
+        [KeyboardButton(text="📊 Моя статистика")],
         [KeyboardButton(text="🔔 Мои подписки")],
         [KeyboardButton(text="💸 Реферальная программа")],
         [KeyboardButton(text="💰 Мой кошелек")],
         [KeyboardButton(text="🛍 Купить технику")],
+        [KeyboardButton(text="🆘 Техподдержка")],
         [KeyboardButton(text="🔙 Главное меню")]
     ]
     return ReplyKeyboardMarkup(keyboard=kb, resize_keyboard=True)
@@ -87,13 +92,15 @@ def specs_multiselect_keyboard(model_id, selected_specs=None):
 def buyout_request_inline_keyboard(request_id):
     kb = [
         [InlineKeyboardButton(text="💰 Предложить цену", callback_data=f"offer_{request_id}")],
-        [InlineKeyboardButton(text="🔄 Обновить", callback_data=f"refresh_req_{request_id}")]
+        [InlineKeyboardButton(text="🔄 Обновить", callback_data=f"refresh_req_{request_id}")],
+        [InlineKeyboardButton(text="📈 История ставок", callback_data=f"history_{request_id}")]
     ]
     return InlineKeyboardMarkup(inline_keyboard=kb)
 
 def my_request_inline_keyboard(request_id):
     kb = [
         [InlineKeyboardButton(text="📊 Посмотреть предложения", callback_data=f"view_offers_{request_id}")],
+        [InlineKeyboardButton(text="📈 История ставок", callback_data=f"history_{request_id}")],
         [InlineKeyboardButton(text="❌ Отменить заявку", callback_data=f"cancel_req_{request_id}")]
     ]
     return InlineKeyboardMarkup(inline_keyboard=kb)
@@ -105,11 +112,22 @@ def offers_inline_keyboard(offers, request_id):
     builder.adjust(1)
     return builder.as_markup()
 
-def resale_lot_inline_keyboard(lot_id, price):
-    kb = [
-        [InlineKeyboardButton(text=f"🛒 Купить за {price} ₽", callback_data=f"buy_{lot_id}")],
-        [InlineKeyboardButton(text="🔄 Обновить", callback_data=f"refresh_lot_{lot_id}")]
-    ]
+def resale_lot_inline_keyboard(lot_id, price, is_favorite=False, is_owner=False):
+    """Клавиатура для карточки объявления (покупатель/продавец)"""
+    fav_text = "✅ В избранном" if is_favorite else "⭐ В избранное"
+    kb = []
+    if not is_owner:
+        # Для покупателя
+        kb.append([InlineKeyboardButton(text=f"🛒 Купить за {price} ₽", callback_data=f"buy_{lot_id}")])
+        kb.append([InlineKeyboardButton(text="💬 Предложить цену", callback_data=f"offer_price_{lot_id}")])
+        kb.append([InlineKeyboardButton(text=fav_text, callback_data=f"fav_{lot_id}")])
+        kb.append([InlineKeyboardButton(text="⚠️ Пожаловаться", callback_data=f"complaint_{lot_id}")])
+    else:
+        # Для владельца (перекупа)
+        kb.append([InlineKeyboardButton(text="📊 Статистика", callback_data=f"lot_stats_{lot_id}")])
+        if lot_status == 'active':
+            kb.append([InlineKeyboardButton(text="✏️ Редактировать", callback_data=f"edit_lot_{lot_id}")])
+    kb.append([InlineKeyboardButton(text="🔄 Обновить", callback_data=f"refresh_lot_{lot_id}")])
     return InlineKeyboardMarkup(inline_keyboard=kb)
 
 def payment_keyboard():
@@ -123,17 +141,36 @@ def payment_keyboard():
     return InlineKeyboardMarkup(inline_keyboard=kb)
 
 def subscriptions_multiselect_keyboard(current_subs):
-    """Создаёт клавиатуру с чекбоксами для подписок на категории"""
+    """Клавиатура для настройки подписок (категории + опции)"""
     from database import get_categories
     categories = get_categories()
     builder = InlineKeyboardBuilder()
     for cat_id, cat_name in categories:
-        # Если категория уже выбрана, ставим галочку
-        prefix = "✅ " if cat_id in current_subs else "⬜ "
-        builder.button(text=f"{prefix}{cat_name}", callback_data=f"sub_toggle_{cat_id}")
-    # Кнопка для всех категорий
-    all_text = "✅ Все категории" if None in current_subs else "⬜ Все категории"
-    builder.button(text=all_text, callback_data="sub_toggle_all")
+        # Поиск настроек для этой категории
+        sub = next((s for s in current_subs if s[0] == cat_id), None)
+        new_text = f"🆕" if (sub and sub[1]) else "⬜"
+        price_text = f"💰" if (sub and sub[2]) else "⬜"
+        end_text = f"⏰" if (sub and sub[3]) else "⬜"
+        builder.button(text=f"{cat_name} {new_text}{price_text}{end_text}", callback_data=f"sub_settings_{cat_id}")
+    # Кнопка для всех категорий (глобальные настройки)
+    all_subs = [s for s in current_subs if s[0] is None]
+    all_new = "🆕" if all_subs and all_subs[0][1] else "⬜"
+    all_price = "💰" if all_subs and all_subs[0][2] else "⬜"
+    all_end = "⏰" if all_subs and all_subs[0][3] else "⬜"
+    builder.button(text=f"Все категории {all_new}{all_price}{all_end}", callback_data="sub_settings_all")
     builder.button(text="💾 Сохранить", callback_data="sub_save")
-    builder.adjust(2)  # по 2 в ряд
+    builder.adjust(2)
+    return builder.as_markup()
+
+def subscription_settings_keyboard(cat_id, current):
+    """Клавиатура для настройки конкретной категории"""
+    new_status = "✅" if current[1] else "⬜"
+    price_status = "✅" if current[2] else "⬜"
+    end_status = "✅" if current[3] else "⬜"
+    builder = InlineKeyboardBuilder()
+    builder.button(text=f"{new_status} Новые лоты", callback_data=f"sub_toggle_new_{cat_id}")
+    builder.button(text=f"{price_status} Снижение цены", callback_data=f"sub_toggle_price_{cat_id}")
+    builder.button(text=f"{end_status} Окончание аукциона", callback_data=f"sub_toggle_end_{cat_id}")
+    builder.button(text="🔙 Назад", callback_data="sub_back")
+    builder.adjust(1)
     return builder.as_markup()

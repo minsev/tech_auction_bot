@@ -4,7 +4,7 @@ from aiogram import Bot, Dispatcher
 
 from config import BOT_TOKEN
 from database import init_db
-from handlers import common, user, reseller, buyer, admin, payment, review
+from handlers import common, user, reseller, buyer, admin, payment, review, support, complaint, top
 
 logging.basicConfig(level=logging.INFO)
 
@@ -20,6 +20,9 @@ async def main():
     dp.include_router(admin.router)
     dp.include_router(payment.router)
     dp.include_router(review.router)
+    dp.include_router(support.router)
+    dp.include_router(complaint.router)
+    dp.include_router(top.router)
     
     await bot.delete_webhook(drop_pending_updates=True)
     await dp.start_polling(bot)
