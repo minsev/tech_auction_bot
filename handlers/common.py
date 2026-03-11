@@ -73,7 +73,7 @@ async def process_contact(message: Message, state: FSMContext):
 async def process_contact_invalid(message: Message):
     await message.answer("Пожалуйста, нажмите кнопку «Зарегистрироваться» и отправьте свой контакт.")
 
-# ===== ИСПРАВЛЕНО: всегда показываем главное меню =====
+# ===== ВОЗВРАТ В ГЛАВНОЕ МЕНЮ =====
 @router.message(F.text == "🔙 Главное меню")
 async def back_to_main(message: Message):
     await message.answer("Главное меню:", reply_markup=main_menu())
