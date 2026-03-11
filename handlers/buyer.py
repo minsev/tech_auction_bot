@@ -4,11 +4,12 @@ from aiogram.types import Message, CallbackQuery
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.utils.keyboard import InlineKeyboardBuilder
+from datetime import datetime
 
 from database import (
     user_exists, get_active_resale_lots, get_resale_lot_by_id,
     reserve_lot, get_user_contact, get_user_info, is_favorite, add_favorite, remove_favorite,
-    get_seller_rating, increment_lot_views, add_price_offer, get_seller_rating,
+    get_seller_rating, increment_lot_views, add_price_offer,
     log_action, get_user_balance
 )
 from keyboards import resale_lot_inline_keyboard
@@ -43,6 +44,9 @@ async def show_resale_lots(message: Message):
         user_id = message.from_user.id
         fav = is_favorite(user_id, lot_id)
         
+        # Исправление: преобразуем строку даты в datetime
+        dt = datetime.fromisoformat(created_at.replace(' ', 'T'))
+        
         caption = (
             f"🔹 Объявление #{lot_id}\n"
             f"📝 {description}\n"
@@ -54,7 +58,7 @@ async def show_resale_lots(message: Message):
             f"💰 Цена: {price} ₽\n"
             f"👤 Продавец: {seller_contact} {rating_text}\n"
             f"👁 Просмотров: {views}\n"
-            f"🕐 Создано: {created_at.strftime('%Y-%m-%d %H:%M')}\n"
+            f"🕐 Создано: {dt.strftime('%Y-%m-%d %H:%M')}\n"
         )
         if status == 'reserved':
             caption += "⏳ ЗАБРОНИРОВАНО\n"
