@@ -13,7 +13,7 @@ from database import (
     subscribe_user, unsubscribe_user, get_user_subscriptions, get_user_balance,
     encode_referrer_id, add_favorite, remove_favorite, is_favorite, get_user_favorites,
     log_action, get_user_contact, get_resale_lot_by_id, increment_lot_views,
-    get_offers_for_request, get_seller_rating
+    get_seller_rating
 )
 from keyboards import (
     user_menu, categories_inline_keyboard, brands_inline_keyboard,
@@ -326,7 +326,9 @@ async def view_offers(callback: CallbackQuery):
     for offer_id, reseller_id, price, created_at in offers:
         reseller_info = get_user_info(reseller_id)
         reseller_name = reseller_info[0] if reseller_info else "Неизвестно"
-        text += f"\n{price} ₽ от {reseller_name} ({created_at.strftime('%d.%m %H:%M')})"
+        # Исправление: преобразуем строку в datetime
+        dt = datetime.fromisoformat(created_at.replace(' ', 'T'))
+        text += f"\n{price} ₽ от {reseller_name} ({dt.strftime('%d.%m %H:%M')})"
     await callback.message.answer(
         text,
         reply_markup=offers_inline_keyboard(offers, req_id)
@@ -338,6 +340,13 @@ async def choose_offer(callback: CallbackQuery):
     parts = callback.data.split("_")
     offer_id = int(parts[2])
     req_id = int(parts[3])
+    
+    # Проверка, что заявка принадлежит вызывающему пользователю
+    req = get_buyout_request_by_id(req_id)
+    if not req or req[1] != callback.from_user.id:
+        await callback.answer("Это не ваша заявка", show_alert=True)
+        return
+    
     offers = get_offers_for_request(req_id)
     winner_id = None
     price = 0
@@ -390,7 +399,9 @@ async def offer_history(callback: CallbackQuery):
         offer_id, reseller_id, price, created_at = o
         reseller_info = get_user_info(reseller_id)
         reseller_name = reseller_info[0] if reseller_info else "Неизвестно"
-        text += f"• {price} ₽ от {reseller_name} – {created_at.strftime('%d.%m %H:%M')}\n"
+        # Исправление: преобразуем строку в datetime
+        dt = datetime.fromisoformat(created_at.replace(' ', 'T'))
+        text += f"• {price} ₽ от {reseller_name} – {dt.strftime('%d.%m %H:%M')}\n"
     await callback.message.answer(text)
     await callback.answer()
 
