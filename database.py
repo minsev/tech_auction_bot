@@ -595,7 +595,7 @@ def create_buyout_request(user_id, category_id, brand_id, model_id, specs, descr
          photo_file_ids, video_file_id, desired_price,
          battery_cycles, max_capacity, display_replaced, defects, accessories,
          expires_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ''', (user_id, category_id, brand_id, model_id, specs, description, condition,
           photo_str, video_file_id, desired_price,
           battery_cycles, max_capacity, display_replaced, defects, accessories,
