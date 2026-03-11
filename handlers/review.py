@@ -3,8 +3,9 @@ from aiogram.types import Message, CallbackQuery
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.utils.keyboard import InlineKeyboardBuilder
+from datetime import datetime
 
-from database import get_resale_lot_by_id, add_review, get_user_info
+from database import get_resale_lot_by_id, add_review, get_user_info, get_seller_reviews, get_seller_rating
 
 router = Router()
 
@@ -55,3 +56,25 @@ async def process_comment(message: Message, state: FSMContext):
     else:
         await message.answer("❌ Не удалось сохранить отзыв (возможно, вы уже оставляли отзыв на этот товар).")
     await state.clear()
+
+@router.message(F.text == "📝 Мои отзывы")
+async def my_reviews(message: Message):
+    user_id = message.from_user.id
+    # Проверка, что пользователь является перекупом (если нужно)
+    # from database import has_role
+    # if not has_role(user_id, 'reseller'):
+    #     await message.answer("Эта функция доступна только перекупам.")
+    #     return
+    rating, count = get_seller_rating(user_id)
+    reviews = get_seller_reviews(user_id)
+    if not reviews:
+        await message.answer("У вас пока нет отзывов.")
+        return
+    text = f"📊 Ваш рейтинг: {rating} ⭐ ({count} отзывов)\n\n"
+    for r in reviews:
+        rating_val, comment, created_at, username, full_name = r
+        buyer_name = f"@{username}" if username else full_name
+        # Исправление: преобразуем строку в datetime
+        dt = datetime.fromisoformat(created_at.replace(' ', 'T'))
+        text += f"⭐ {rating_val}/5 от {buyer_name}\n   «{comment}»\n   {dt.strftime('%d.%m.%Y')}\n\n"
+    await message.answer(text[:4000])
