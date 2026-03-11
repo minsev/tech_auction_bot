@@ -668,7 +668,6 @@ def cancel_buyout_request(req_id):
     cur.execute('UPDATE buyout_requests SET status = "cancelled" WHERE id = ?', (req_id,))
     conn.commit()
     conn.close()
-    # user_id неизвестен, можно получить через get_buyout_request_by_id, но для простоты логируем без user_id
     log_action(0, 'BUYOUT_CANCEL', f'Заявка #{req_id}')
 
 
