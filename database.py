@@ -110,7 +110,6 @@ def init_db():
             defects TEXT DEFAULT NULL,
             accessories TEXT DEFAULT NULL,
             status TEXT DEFAULT 'active' CHECK(status IN ('active', 'completed', 'cancelled', 'expired')),
-            expires_at TIMESTAMP,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             winner_id INTEGER DEFAULT NULL,
             FOREIGN KEY(user_id) REFERENCES users(user_id)
@@ -284,28 +283,11 @@ def init_db():
 # ---------- Фоновые задачи ----------
 def start_background_tasks():
     global _background_tasks
-    _background_tasks.append(asyncio.create_task(check_expired_requests()))
+    # _background_tasks.append(asyncio.create_task(check_expired_requests()))  # отключено
     _background_tasks.append(asyncio.create_task(check_price_drops()))
     # при необходимости можно добавить другие задачи
 
-async def check_expired_requests():
-    while True:
-        try:
-            conn = sqlite3.connect('tech_auction.db')
-            cur = conn.cursor()
-            cur.execute('''
-                UPDATE buyout_requests 
-                SET status = 'expired' 
-                WHERE status = 'active' AND expires_at < datetime('now')
-            ''')
-            affected = cur.rowcount
-            if affected:
-                log_action(0, 'SYSTEM', f'Автоматически завершено {affected} заявок')
-            conn.commit()
-            conn.close()
-        except Exception as e:
-            print(f"Ошибка в check_expired_requests: {e}")
-        await asyncio.sleep(60)
+# Функция check_expired_requests удалена, так как столбец expires_at больше не используется
 
 async def check_price_drops():
     while True:
@@ -585,7 +567,6 @@ def create_buyout_request(user_id, category_id, brand_id, model_id, specs, descr
                           photo_file_ids, video_file_id, desired_price,
                           battery_cycles=None, max_capacity=None, display_replaced=None,
                           defects=None, accessories=None):
-    expires_at = datetime.datetime.now() + datetime.timedelta(hours=5)
     photo_str = ','.join(photo_file_ids) if photo_file_ids else ''
     conn = sqlite3.connect('tech_auction.db')
     cur = conn.cursor()
@@ -593,13 +574,11 @@ def create_buyout_request(user_id, category_id, brand_id, model_id, specs, descr
         INSERT INTO buyout_requests 
         (user_id, category_id, brand_id, model_id, specs, description, condition,
          photo_file_ids, video_file_id, desired_price,
-         battery_cycles, max_capacity, display_replaced, defects, accessories,
-         expires_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         battery_cycles, max_capacity, display_replaced, defects, accessories)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ''', (user_id, category_id, brand_id, model_id, specs, description, condition,
           photo_str, video_file_id, desired_price,
-          battery_cycles, max_capacity, display_replaced, defects, accessories,
-          expires_at))
+          battery_cycles, max_capacity, display_replaced, defects, accessories))
     request_id = cur.lastrowid
     conn.commit()
     conn.close()
