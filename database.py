@@ -2,8 +2,7 @@ import sqlite3
 import datetime
 import base64
 import asyncio
-import json
-from typing import Optional, List, Tuple, Any
+from typing import Optional, List, Tuple
 
 # Глобальная переменная для задач фоновых проверок
 _background_tasks = []
@@ -11,7 +10,7 @@ _background_tasks = []
 def init_db():
     conn = sqlite3.connect('tech_auction.db')
     cur = conn.cursor()
-    
+
     # ---------- Пользователи ----------
     cur.execute('''
         CREATE TABLE IF NOT EXISTS users (
@@ -28,7 +27,7 @@ def init_db():
             FOREIGN KEY(referrer_id) REFERENCES users(user_id)
         )
     ''')
-    
+
     cur.execute('''
         CREATE TABLE IF NOT EXISTS user_roles (
             user_id INTEGER NOT NULL,
@@ -37,13 +36,13 @@ def init_db():
             FOREIGN KEY(user_id) REFERENCES users(user_id)
         )
     ''')
-    
+
     cur.execute('''
         CREATE TABLE IF NOT EXISTS admins (
             user_id INTEGER PRIMARY KEY
         )
     ''')
-    
+
     cur.execute('''
         CREATE TABLE IF NOT EXISTS reseller_requests (
             user_id INTEGER PRIMARY KEY,
@@ -53,7 +52,7 @@ def init_db():
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     ''')
-    
+
     # ---------- Категории, бренды, модели, характеристики ----------
     cur.execute('''
         CREATE TABLE IF NOT EXISTS categories (
@@ -61,7 +60,7 @@ def init_db():
             name TEXT UNIQUE
         )
     ''')
-    
+
     cur.execute('''
         CREATE TABLE IF NOT EXISTS brands (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -70,7 +69,7 @@ def init_db():
             FOREIGN KEY(category_id) REFERENCES categories(id)
         )
     ''')
-    
+
     cur.execute('''
         CREATE TABLE IF NOT EXISTS models (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -79,17 +78,18 @@ def init_db():
             FOREIGN KEY(brand_id) REFERENCES brands(id)
         )
     ''')
-    
+
+    # Характеристики: цвет, память и т.д.
     cur.execute('''
         CREATE TABLE IF NOT EXISTS specs (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             model_id INTEGER,
-            spec_type TEXT,
+            spec_type TEXT,  -- например, 'color', 'storage'
             spec_value TEXT,
             FOREIGN KEY(model_id) REFERENCES models(id)
         )
     ''')
-    
+
     # ---------- Заявки на выкуп ----------
     cur.execute('''
         CREATE TABLE IF NOT EXISTS buyout_requests (
@@ -98,7 +98,7 @@ def init_db():
             category_id INTEGER,
             brand_id INTEGER,
             model_id INTEGER,
-            specs TEXT,
+            specs TEXT,  -- строка с ID характеристик через запятую
             description TEXT,
             condition TEXT,
             photo_file_ids TEXT,
@@ -115,7 +115,7 @@ def init_db():
             FOREIGN KEY(user_id) REFERENCES users(user_id)
         )
     ''')
-    
+
     cur.execute('''
         CREATE TABLE IF NOT EXISTS offers (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -128,7 +128,7 @@ def init_db():
             FOREIGN KEY(reseller_id) REFERENCES users(user_id)
         )
     ''')
-    
+
     # ---------- Объявления перекупов ----------
     cur.execute('''
         CREATE TABLE IF NOT EXISTS resale_lots (
@@ -159,7 +159,7 @@ def init_db():
             FOREIGN KEY(buyer_id) REFERENCES users(user_id)
         )
     ''')
-    
+
     # ---------- Отзывы ----------
     cur.execute('''
         CREATE TABLE IF NOT EXISTS reviews (
@@ -175,8 +175,8 @@ def init_db():
             FOREIGN KEY(lot_id) REFERENCES resale_lots(id)
         )
     ''')
-    
-    # ---------- Подписки (умные уведомления) ----------
+
+    # ---------- Подписки ----------
     cur.execute('''
         CREATE TABLE IF NOT EXISTS subscriptions (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -191,7 +191,7 @@ def init_db():
             FOREIGN KEY(category_id) REFERENCES categories(id)
         )
     ''')
-    
+
     # ---------- Рефералы ----------
     cur.execute('''
         CREATE TABLE IF NOT EXISTS referrals (
@@ -205,8 +205,8 @@ def init_db():
             FOREIGN KEY(referred_id) REFERENCES users(user_id)
         )
     ''')
-    
-    # ---------- Избранное (закладки) ----------
+
+    # ---------- Избранное ----------
     cur.execute('''
         CREATE TABLE IF NOT EXISTS favorites (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -219,8 +219,8 @@ def init_db():
             FOREIGN KEY(lot_id) REFERENCES resale_lots(id)
         )
     ''')
-    
-    # ---------- Торг (предложения цены на объявления) ----------
+
+    # ---------- Торг (предложения цены) ----------
     cur.execute('''
         CREATE TABLE IF NOT EXISTS price_offers (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -233,7 +233,7 @@ def init_db():
             FOREIGN KEY(buyer_id) REFERENCES users(user_id)
         )
     ''')
-    
+
     # ---------- Логирование ----------
     cur.execute('''
         CREATE TABLE IF NOT EXISTS logs (
@@ -245,7 +245,7 @@ def init_db():
             FOREIGN KEY(user_id) REFERENCES users(user_id)
         )
     ''')
-    
+
     # ---------- Жалобы ----------
     cur.execute('''
         CREATE TABLE IF NOT EXISTS complaints (
@@ -259,7 +259,7 @@ def init_db():
             FOREIGN KEY(lot_id) REFERENCES resale_lots(id)
         )
     ''')
-    
+
     # ---------- Поддержка ----------
     cur.execute('''
         CREATE TABLE IF NOT EXISTS support_tickets (
@@ -271,10 +271,10 @@ def init_db():
             FOREIGN KEY(user_id) REFERENCES users(user_id)
         )
     ''')
-    
+
     conn.commit()
     conn.close()
-    
+
     add_default_categories()
     populate_popular_data()
     start_background_tasks()
@@ -283,18 +283,15 @@ def init_db():
 # ---------- Фоновые задачи ----------
 def start_background_tasks():
     global _background_tasks
-    # _background_tasks.append(asyncio.create_task(check_expired_requests()))  # отключено
+    # _background_tasks.append(asyncio.create_task(check_expired_requests()))
     _background_tasks.append(asyncio.create_task(check_price_drops()))
-    # при необходимости можно добавить другие задачи
 
-# Функция check_expired_requests удалена, так как столбец expires_at больше не используется
 
 async def check_price_drops():
     while True:
         try:
             conn = sqlite3.connect('tech_auction.db')
             cur = conn.cursor()
-            # Находим все избранные лоты, цена которых упала
             cur.execute('''
                 SELECT f.user_id, f.lot_id, f.price_at_add, l.price
                 FROM favorites f
@@ -303,18 +300,14 @@ async def check_price_drops():
             ''')
             drops = cur.fetchall()
             for user_id, lot_id, old_price, new_price in drops:
-                # Проверяем, подписан ли пользователь на уведомления о снижении цены
                 cur.execute('''
                     SELECT 1 FROM subscriptions 
                     WHERE user_id = ? AND (category_id IS NULL OR category_id = (SELECT category_id FROM resale_lots WHERE id = ?))
                     AND notify_on_price_drop = 1
                 ''', (user_id, lot_id))
                 if cur.fetchone():
-                    # Отправить уведомление (будет реализовано в хендлере через бота)
-                    # Здесь только сохраняем факт, что нужно уведомить
-                    # Можно использовать отдельную таблицу уведомлений
+                    # Здесь можно отправить уведомление (реализуется в хендлере)
                     pass
-                # Обновляем цену в избранном, чтобы уведомлять только один раз
                 cur.execute('''
                     UPDATE favorites SET price_at_add = ? WHERE user_id = ? AND lot_id = ?
                 ''', (new_price, user_id, lot_id))
@@ -322,7 +315,7 @@ async def check_price_drops():
             conn.close()
         except Exception as e:
             print(f"Ошибка в check_price_drops: {e}")
-        await asyncio.sleep(600)  # каждые 10 минут
+        await asyncio.sleep(600)
 
 
 # ---------- Логирование ----------
@@ -352,7 +345,7 @@ def get_logs(limit: int = 100):
     return rows
 
 
-# ---------- Категории, бренды, модели ----------
+# ---------- Категории, бренды, модели, характеристики ----------
 def add_default_categories():
     categories = ['Ноутбуки', 'Смартфоны', 'Планшеты', 'Фототехника', 'Аудио/Видео', 'Игровые консоли', 'Комплектующие ПК', 'Инструменты']
     conn = sqlite3.connect('tech_auction.db')
@@ -390,6 +383,14 @@ def get_specs_by_model(model_id):
     conn = sqlite3.connect('tech_auction.db')
     cur = conn.cursor()
     cur.execute('SELECT id, spec_type, spec_value FROM specs WHERE model_id = ?', (model_id,))
+    rows = cur.fetchall()
+    conn.close()
+    return rows
+
+def get_specs_by_model_and_type(model_id, spec_type):
+    conn = sqlite3.connect('tech_auction.db')
+    cur = conn.cursor()
+    cur.execute('SELECT id, spec_value FROM specs WHERE model_id = ? AND spec_type = ?', (model_id, spec_type))
     rows = cur.fetchall()
     conn.close()
     return rows
@@ -1141,7 +1142,45 @@ def get_user_payment_id(user_id):
     return row[0] if row else None
 
 
-# ---------- Популярные данные (iPhone, Samsung, AirPods) ----------
+# ---------- Популярные данные ----------
 def populate_popular_data():
-    # (полный код такой же как в предыдущих версиях, для краткости опущен)
-    pass
+    # Здесь можно добавить популярные бренды и модели
+    conn = sqlite3.connect('tech_auction.db')
+    cur = conn.cursor()
+
+    # Для категории "Смартфоны" (id=2)
+    cur.execute("INSERT OR IGNORE INTO brands (category_id, name) VALUES (2, 'Apple'), (2, 'Samsung'), (2, 'Xiaomi'), (2, 'Google')")
+    # Для Apple
+    apple_id = cur.execute("SELECT id FROM brands WHERE name='Apple' AND category_id=2").fetchone()
+    if apple_id:
+        apple_id = apple_id[0]
+        cur.execute("INSERT OR IGNORE INTO models (brand_id, name) VALUES (?, 'iPhone 14'), (?, 'iPhone 15')", (apple_id, apple_id))
+        iphone14_id = cur.execute("SELECT id FROM models WHERE name='iPhone 14' AND brand_id=?", (apple_id,)).fetchone()
+        if iphone14_id:
+            iphone14_id = iphone14_id[0]
+            cur.execute("INSERT OR IGNORE INTO specs (model_id, spec_type, spec_value) VALUES (?, 'color', 'Черный'), (?, 'color', 'Белый'), (?, 'storage', '128GB'), (?, 'storage', '256GB')", 
+                        (iphone14_id, iphone14_id, iphone14_id, iphone14_id))
+        iphone15_id = cur.execute("SELECT id FROM models WHERE name='iPhone 15' AND brand_id=?", (apple_id,)).fetchone()
+        if iphone15_id:
+            iphone15_id = iphone15_id[0]
+            cur.execute("INSERT OR IGNORE INTO specs (model_id, spec_type, spec_value) VALUES (?, 'color', 'Черный'), (?, 'color', 'Синий'), (?, 'storage', '128GB'), (?, 'storage', '256GB')",
+                        (iphone15_id, iphone15_id, iphone15_id, iphone15_id))
+
+    # Samsung
+    samsung_id = cur.execute("SELECT id FROM brands WHERE name='Samsung' AND category_id=2").fetchone()
+    if samsung_id:
+        samsung_id = samsung_id[0]
+        cur.execute("INSERT OR IGNORE INTO models (brand_id, name) VALUES (?, 'Galaxy S23'), (?, 'Galaxy S24')", (samsung_id, samsung_id))
+        s23_id = cur.execute("SELECT id FROM models WHERE name='Galaxy S23' AND brand_id=?", (samsung_id,)).fetchone()
+        if s23_id:
+            s23_id = s23_id[0]
+            cur.execute("INSERT OR IGNORE INTO specs (model_id, spec_type, spec_value) VALUES (?, 'color', 'Черный'), (?, 'color', 'Зеленый'), (?, 'storage', '128GB'), (?, 'storage', '256GB')",
+                        (s23_id, s23_id, s23_id, s23_id))
+        s24_id = cur.execute("SELECT id FROM models WHERE name='Galaxy S24' AND brand_id=?", (samsung_id,)).fetchone()
+        if s24_id:
+            s24_id = s24_id[0]
+            cur.execute("INSERT OR IGNORE INTO specs (model_id, spec_type, spec_value) VALUES (?, 'color', 'Черный'), (?, 'color', 'Фиолетовый'), (?, 'storage', '128GB'), (?, 'storage', '256GB')",
+                        (s24_id, s24_id, s24_id, s24_id))
+
+    conn.commit()
+    conn.close()
