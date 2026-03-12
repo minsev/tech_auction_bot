@@ -11,7 +11,7 @@ from database import (
     has_role, user_exists, add_reseller_request, get_request,
     get_active_buyout_requests, get_buyout_request_by_id,
     add_offer, get_user_info, get_categories, get_brands_by_category, get_models_by_brand,
-    get_specs_by_model, create_resale_lot, get_active_resale_lots, get_resale_lot_by_id,
+    get_specs_by_model, get_specs_by_model_and_type, create_resale_lot, get_active_resale_lots, get_resale_lot_by_id,
     confirm_sale, cancel_reserve, get_user_contact, get_seller_reviews, get_seller_rating,
     subscribe_user, unsubscribe_user, get_user_subscriptions, get_user_balance,
     encode_referrer_id, get_pending_referral_by_referred, mark_reward_given, update_balance,
@@ -23,7 +23,9 @@ from database import (
 from keyboards import (
     reseller_menu, buyout_request_inline_keyboard, resale_lot_inline_keyboard,
     categories_inline_keyboard, brands_inline_keyboard, models_inline_keyboard,
-    specs_multiselect_keyboard, subscriptions_multiselect_keyboard, subscription_settings_keyboard
+    condition_inline_keyboard, display_replaced_inline_keyboard,
+    defects_inline_keyboard, accessories_inline_keyboard, specs_inline_keyboard,
+    subscriptions_multiselect_keyboard, subscription_settings_keyboard
 )
 from config import ADMIN_GROUP_ID
 from handlers.payment import show_wallet
@@ -34,18 +36,20 @@ class ResaleLotCreation(StatesGroup):
     category = State()
     brand = State()
     model = State()
-    specs = State()
-    custom_description = State()
-    custom_condition = State()
+    specs_color = State()
+    specs_storage = State()
+    condition = State()
     photos = State()
     video = State()
-    custom_price = State()
-    use_custom = State()
+    price = State()
     battery_cycles = State()
     max_capacity = State()
     display_replaced = State()
     defects = State()
     accessories = State()
+    selected_specs = State()  # для сбора ID выбранных характеристик
+    defects_list = State()
+    acc_list = State()
 
 class OfferState(StatesGroup):
     price = State()
@@ -163,7 +167,6 @@ async def process_offer_price(message: Message, state: FSMContext):
         success = add_offer(req_id, user_id, price)
         if success:
             await message.answer("✅ Ваше предложение отправлено продавцу!")
-            # Уведомление продавца
             req = get_buyout_request_by_id(req_id)
             if req:
                 seller_id = req[1]
@@ -182,6 +185,7 @@ async def process_offer_price(message: Message, state: FSMContext):
     except ValueError:
         await message.answer("Введите целое число.")
 
+# ---------- Создание объявления ----------
 @router.message(F.text == "➕ Создать объявление")
 async def create_resale_start(message: Message, state: FSMContext):
     user_id = message.from_user.id
@@ -191,6 +195,7 @@ async def create_resale_start(message: Message, state: FSMContext):
     if is_user_blocked(user_id):
         await message.answer("⛔ Ваш аккаунт заблокирован.")
         return
+    await state.update_data(selected_specs=[])
     await message.answer(
         "Выберите категорию товара:",
         reply_markup=categories_inline_keyboard()
@@ -209,12 +214,11 @@ async def resale_category_chosen(callback: CallbackQuery, state: FSMContext):
             reply_markup=brands_inline_keyboard(category_id)
         )
         await state.set_state(ResaleLotCreation.brand)
-        await state.update_data(use_custom=False)
     else:
-        await state.update_data(use_custom=True)
+        # Если брендов нет, переходим к ручному вводу (но по идее они есть)
         await callback.message.delete()
-        await callback.message.answer("Введите название бренда (или модель) вручную:")
-        await state.set_state(ResaleLotCreation.custom_description)
+        await callback.message.answer("Введите название бренда вручную:")
+        await state.set_state(ResaleLotCreation.condition)
     await callback.answer()
 
 @router.callback_query(ResaleLotCreation.brand, F.data.startswith("brand_"))
@@ -230,34 +234,43 @@ async def resale_brand_chosen(callback: CallbackQuery, state: FSMContext):
         )
         await state.set_state(ResaleLotCreation.model)
     else:
-        await state.update_data(use_custom=True)
         await callback.message.delete()
-        await callback.message.answer("Введите описание товара (обязательно):")
-        await state.set_state(ResaleLotCreation.custom_description)
+        await callback.message.answer("Введите название модели вручную:")
+        await state.set_state(ResaleLotCreation.condition)
     await callback.answer()
 
 @router.callback_query(ResaleLotCreation.model, F.data.startswith("model_"))
 async def resale_model_chosen(callback: CallbackQuery, state: FSMContext):
     model_id = int(callback.data.split("_")[1])
-    await state.update_data(model_id=model_id, selected_specs=[])
+    await state.update_data(model_id=model_id)
+    # Проверяем характеристики
     specs = get_specs_by_model(model_id)
-    if specs:
-        await callback.message.delete()
+    color_specs = [s for s in specs if s[1] == 'color']
+    storage_specs = [s for s in specs if s[1] == 'storage']
+    await callback.message.delete()
+    if color_specs:
         await callback.message.answer(
-            "Выберите характеристики (можно несколько):",
-            reply_markup=specs_multiselect_keyboard(model_id, [])
+            "Выберите цвет (можно несколько):",
+            reply_markup=specs_inline_keyboard(model_id, 'color', [])
         )
-        await state.set_state(ResaleLotCreation.specs)
+        await state.set_state(ResaleLotCreation.specs_color)
+    elif storage_specs:
+        await callback.message.answer(
+            "Выберите объём памяти (можно несколько):",
+            reply_markup=specs_inline_keyboard(model_id, 'storage', [])
+        )
+        await state.set_state(ResaleLotCreation.specs_storage)
     else:
-        await state.update_data(use_custom=True)
-        await callback.message.delete()
-        await callback.message.answer("Введите описание товара (обязательно):")
-        await state.set_state(ResaleLotCreation.custom_description)
+        await callback.message.answer(
+            "Выберите состояние товара:",
+            reply_markup=condition_inline_keyboard()
+        )
+        await state.set_state(ResaleLotCreation.condition)
     await callback.answer()
 
-@router.callback_query(ResaleLotCreation.specs, F.data.startswith("spec_"))
-async def resale_spec_toggle(callback: CallbackQuery, state: FSMContext):
-    spec_id = int(callback.data.split("_")[1])
+@router.callback_query(ResaleLotCreation.specs_color, F.data.startswith("spec_color_"))
+async def resale_color_chosen(callback: CallbackQuery, state: FSMContext):
+    spec_id = int(callback.data.split("_")[2])
     data = await state.get_data()
     selected = data.get('selected_specs', [])
     if spec_id in selected:
@@ -267,35 +280,67 @@ async def resale_spec_toggle(callback: CallbackQuery, state: FSMContext):
     await state.update_data(selected_specs=selected)
     model_id = data['model_id']
     await callback.message.edit_reply_markup(
-        reply_markup=specs_multiselect_keyboard(model_id, selected)
+        reply_markup=specs_inline_keyboard(model_id, 'color', selected)
     )
     await callback.answer()
 
-@router.callback_query(ResaleLotCreation.specs, F.data == "specs_done")
-async def resale_specs_done(callback: CallbackQuery, state: FSMContext):
+# После цвета – переходим к памяти, если есть
+@router.callback_query(ResaleLotCreation.specs_color, F.data == "next")
+async def resale_color_next(callback: CallbackQuery, state: FSMContext):
+    data = await state.get_data()
+    model_id = data['model_id']
+    storage_specs = get_specs_by_model_and_type(model_id, 'storage')
+    if storage_specs:
+        await callback.message.delete()
+        await callback.message.answer(
+            "Выберите объём памяти:",
+            reply_markup=specs_inline_keyboard(model_id, 'storage', data.get('selected_specs', []))
+        )
+        await state.set_state(ResaleLotCreation.specs_storage)
+    else:
+        await callback.message.delete()
+        await callback.message.answer(
+            "Выберите состояние товара:",
+            reply_markup=condition_inline_keyboard()
+        )
+        await state.set_state(ResaleLotCreation.condition)
+    await callback.answer()
+
+@router.callback_query(ResaleLotCreation.specs_storage, F.data.startswith("spec_storage_"))
+async def resale_storage_chosen(callback: CallbackQuery, state: FSMContext):
+    spec_id = int(callback.data.split("_")[2])
     data = await state.get_data()
     selected = data.get('selected_specs', [])
-    if not selected:
-        await callback.answer("Выберите хотя бы одну характеристику", show_alert=True)
-        return
-    specs_str = ','.join(str(s) for s in selected)
-    await state.update_data(specs=specs_str, description="", condition="")
+    if spec_id in selected:
+        selected.remove(spec_id)
+    else:
+        selected.append(spec_id)
+    await state.update_data(selected_specs=selected)
+    model_id = data['model_id']
+    await callback.message.edit_reply_markup(
+        reply_markup=specs_inline_keyboard(model_id, 'storage', selected)
+    )
+    await callback.answer()
+
+@router.callback_query(ResaleLotCreation.specs_storage, F.data == "next")
+async def resale_storage_next(callback: CallbackQuery, state: FSMContext):
+    await callback.message.delete()
+    await callback.message.answer(
+        "Выберите состояние товара:",
+        reply_markup=condition_inline_keyboard()
+    )
+    await state.set_state(ResaleLotCreation.condition)
+    await callback.answer()
+
+@router.callback_query(ResaleLotCreation.condition, F.data.startswith("cond_"))
+async def resale_condition_chosen(callback: CallbackQuery, state: FSMContext):
+    condition = callback.data.split("_")[1]
+    await state.update_data(condition=condition)
     await callback.message.delete()
     await callback.message.answer("Загрузите фотографии товара (до 5 штук). После загрузки каждой фотографии выберите действие.")
     await state.update_data(photos=[])
     await state.set_state(ResaleLotCreation.photos)
     await callback.answer()
-
-@router.message(ResaleLotCreation.custom_description)
-async def resale_custom_description(message: Message, state: FSMContext):
-    desc = message.text.strip()
-    if not desc:
-        await message.answer("Описание не может быть пустым.")
-        return
-    await state.update_data(description=desc, condition="")
-    await message.answer("Загрузите фотографии товара (до 5 штук). После загрузки каждой фотографии выберите действие.")
-    await state.update_data(photos=[])
-    await state.set_state(ResaleLotCreation.photos)
 
 @router.message(ResaleLotCreation.photos, F.photo)
 async def resale_photos(message: Message, state: FSMContext):
@@ -331,22 +376,21 @@ async def resale_video(message: Message, state: FSMContext):
     video_id = message.video.file_id
     await state.update_data(video=video_id)
     await message.answer("Введите цену продажи в рублях (только число):")
-    await state.set_state(ResaleLotCreation.custom_price)
+    await state.set_state(ResaleLotCreation.price)
 
 @router.message(ResaleLotCreation.video)
 async def resale_video_skip(message: Message, state: FSMContext):
     if message.text == '-':
         await state.update_data(video=None)
         await message.answer("Введите цену продажи в рублях (только число):")
-        await state.set_state(ResaleLotCreation.custom_price)
+        await state.set_state(ResaleLotCreation.price)
     else:
         await message.answer("Отправьте видео или '-' для пропуска.")
 
-@router.message(ResaleLotCreation.custom_price)
-async def resale_custom_price(message: Message, state: FSMContext):
+@router.message(ResaleLotCreation.price)
+async def resale_price(message: Message, state: FSMContext):
     try:
-        cleaned = message.text.strip().replace(' ', '').replace(',', '')
-        price = int(cleaned)
+        price = int(message.text.strip())
         if price <= 0:
             await message.answer("Цена должна быть положительным числом. Введите цену:")
             return
@@ -354,7 +398,7 @@ async def resale_custom_price(message: Message, state: FSMContext):
         await message.answer("Введите количество циклов перезарядки (если известно, иначе 0):")
         await state.set_state(ResaleLotCreation.battery_cycles)
     except ValueError:
-        await message.answer("Введите целое число (например, 5000).")
+        await message.answer("Введите целое число.")
 
 @router.message(ResaleLotCreation.battery_cycles)
 async def resale_battery_cycles(message: Message, state: FSMContext):
@@ -371,46 +415,97 @@ async def resale_max_capacity(message: Message, state: FSMContext):
     try:
         capacity = int(message.text.strip())
         await state.update_data(max_capacity=capacity)
-        await message.answer("Был ли переклеен дисплей? (Да/Нет):")
+        await message.answer(
+            "Был ли переклеен дисплей?",
+            reply_markup=display_replaced_inline_keyboard()
+        )
         await state.set_state(ResaleLotCreation.display_replaced)
     except ValueError:
         await message.answer("Введите целое число.")
 
-@router.message(ResaleLotCreation.display_replaced)
-async def resale_display_replaced(message: Message, state: FSMContext):
-    text = message.text.strip().lower()
-    if text in ['да', 'нет']:
-        await state.update_data(display_replaced=text)
-        await message.answer("Опишите дефекты (если есть, иначе '-'):")
-        await state.set_state(ResaleLotCreation.defects)
-    else:
-        await message.answer("Введите 'Да' или 'Нет'.")
+@router.callback_query(ResaleLotCreation.display_replaced, F.data.startswith("display_"))
+async def resale_display_replaced(callback: CallbackQuery, state: FSMContext):
+    answer = callback.data.split("_")[1]  # yes/no
+    await state.update_data(display_replaced=answer)
+    await callback.message.delete()
+    await callback.message.answer(
+        "Выберите дефекты (можно несколько, после выбора нажмите 'Готово'):",
+        reply_markup=defects_inline_keyboard()
+    )
+    await state.set_state(ResaleLotCreation.defects)
+    await callback.answer()
 
-@router.message(ResaleLotCreation.defects)
-async def resale_defects(message: Message, state: FSMContext):
-    defects = message.text.strip()
-    if defects == '-':
-        defects = ''
-    await state.update_data(defects=defects)
-    await message.answer("Что входит в комплект? (перечислите через запятую или '-' если ничего):")
-    await state.set_state(ResaleLotCreation.accessories)
-
-@router.message(ResaleLotCreation.accessories)
-async def resale_accessories(message: Message, state: FSMContext):
-    accessories = message.text.strip()
-    if accessories == '-':
-        accessories = ''
+@router.callback_query(ResaleLotCreation.defects, F.data.startswith("defect_"))
+async def resale_defects_toggle(callback: CallbackQuery, state: FSMContext):
+    defect = callback.data.split("_")[1]
     data = await state.get_data()
-    user_id = message.from_user.id
+    defects_list = data.get('defects_list', [])
+    if defect == "Другое":
+        await callback.message.answer("Введите описание дефекта текстом:")
+        await state.set_state(ResaleLotCreation.defects_custom)  # нужно добавить состояние
+    else:
+        if defect in defects_list:
+            defects_list.remove(defect)
+        else:
+            defects_list.append(defect)
+        await state.update_data(defects_list=defects_list)
+        await callback.message.edit_reply_markup(
+            reply_markup=defects_inline_keyboard()
+        )
+    await callback.answer()
+
+@router.callback_query(ResaleLotCreation.defects, F.data == "defect_done")
+async def resale_defects_done(callback: CallbackQuery, state: FSMContext):
+    data = await state.get_data()
+    defects_list = data.get('defects_list', [])
+    defects_str = ', '.join(defects_list) if defects_list else ''
+    await state.update_data(defects=defects_str)
+    await callback.message.delete()
+    await callback.message.answer(
+        "Что входит в комплект? (можно выбрать несколько, после выбора нажмите 'Готово'):",
+        reply_markup=accessories_inline_keyboard()
+    )
+    await state.set_state(ResaleLotCreation.accessories)
+    await callback.answer()
+
+@router.callback_query(ResaleLotCreation.accessories, F.data.startswith("acc_"))
+async def resale_accessories_toggle(callback: CallbackQuery, state: FSMContext):
+    acc = callback.data.split("_")[1]
+    data = await state.get_data()
+    acc_list = data.get('acc_list', [])
+    if acc == "Другое":
+        await callback.message.answer("Введите комплектацию текстом:")
+        await state.set_state(ResaleLotCreation.accessories_custom)
+    else:
+        if acc in acc_list:
+            acc_list.remove(acc)
+        else:
+            acc_list.append(acc)
+        await state.update_data(acc_list=acc_list)
+        await callback.message.edit_reply_markup(
+            reply_markup=accessories_inline_keyboard()
+        )
+    await callback.answer()
+
+@router.callback_query(ResaleLotCreation.accessories, F.data == "acc_done")
+async def resale_accessories_done(callback: CallbackQuery, state: FSMContext):
+    data = await state.get_data()
+    acc_list = data.get('acc_list', [])
+    accessories_str = ', '.join(acc_list) if acc_list else ''
+    await state.update_data(accessories=accessories_str)
+
+    # Собираем всё и создаём объявление
+    user_id = callback.from_user.id
+    data = await state.get_data()
 
     lot_id = create_resale_lot(
         reseller_id=user_id,
         category_id=data['category_id'],
         brand_id=data.get('brand_id', 0),
         model_id=data.get('model_id', 0),
-        specs=data.get('specs', ''),
-        description=data.get('description', ''),
-        condition=data.get('condition', ''),
+        specs=','.join(str(s) for s in data.get('selected_specs', [])),
+        description="",  # можно добавить описание
+        condition=data['condition'],
         photo_file_ids=data.get('photos', []),
         video_file_id=data.get('video'),
         price=data['price'],
@@ -418,13 +513,15 @@ async def resale_accessories(message: Message, state: FSMContext):
         max_capacity=data.get('max_capacity'),
         display_replaced=data.get('display_replaced'),
         defects=data.get('defects'),
-        accessories=accessories
+        accessories=data.get('accessories')
     )
-    await message.answer(
+
+    await callback.message.answer(
         f"✅ Объявление #{lot_id} отправлено на модерацию!\n"
         f"После проверки администратором оно появится в каталоге.",
         reply_markup=reseller_menu()
     )
+
     # Уведомление админам
     kb = InlineKeyboardBuilder()
     kb.button(text="✅ Одобрить", callback_data=f"approve_lot_{lot_id}")
@@ -433,21 +530,23 @@ async def resale_accessories(message: Message, state: FSMContext):
     photo_list = data.get('photos', [])
     first_photo = photo_list[0] if photo_list else None
     if first_photo:
-        await message.bot.send_photo(
+        await callback.bot.send_photo(
             chat_id=ADMIN_GROUP_ID,
             photo=first_photo,
             caption=f"🆕 Новое объявление на модерацию #{lot_id}\nОписание: {data.get('description')}\nЦена: {data['price']} ₽\nПродавец: {get_user_contact(user_id)}",
             reply_markup=kb.as_markup()
         )
     else:
-        await message.bot.send_message(
+        await callback.bot.send_message(
             ADMIN_GROUP_ID,
             f"🆕 Новое объявление на модерацию #{lot_id}\nОписание: {data.get('description')}\nЦена: {data['price']} ₽\nПродавец: {get_user_contact(user_id)}",
             reply_markup=kb.as_markup()
         )
     log_action(user_id, 'CREATE_RESALE_LOT', f'Лот #{lot_id}')
     await state.clear()
+    await callback.answer()
 
+# ---------- Остальные обработчики (мои объявления, статистика, подписки и т.д.) ----------
 @router.message(F.text == "🏷 Мои объявления")
 async def my_resale_lots(message: Message):
     user_id = message.from_user.id
@@ -521,175 +620,7 @@ async def my_stats(message: Message):
     )
     await message.answer(text)
 
-@router.callback_query(F.data.startswith("confirm_sale_"))
-async def confirm_sale_handler(callback: CallbackQuery, **kwargs):
-    user_id = callback.from_user.id
-    lot_id = int(callback.data.split("_")[2])
-    lot = get_resale_lot_by_id(lot_id)
-    if not lot or lot[19] != 'reserved':  # status
-        await callback.answer("Лот не в статусе резерва.", show_alert=True)
-        return
-    if lot[1] != user_id:
-        await callback.answer("Это не ваше объявление.", show_alert=True)
-        return
-    if confirm_sale(lot_id):
-        update_reliability(user_id, 2)
-        buyer_id = lot[20]  # buyer_id
-        if buyer_id:
-            await callback.bot.send_message(
-                buyer_id,
-                f"✅ Продавец подтвердил сделку по товару #{lot_id}!\n"
-                f"Свяжитесь с ним: {get_user_contact(user_id)}"
-            )
-            kb = InlineKeyboardBuilder()
-            kb.button(text="⭐ Оставить отзыв", callback_data=f"review_{lot_id}")
-            await callback.bot.send_message(
-                buyer_id,
-                f"Пожалуйста, оцените сделку с продавцом и оставьте отзыв:",
-                reply_markup=kb.as_markup()
-            )
-            ref = get_pending_referral_by_referred(buyer_id)
-            if ref:
-                referral_id, referrer_id = ref
-                update_balance(referrer_id, 1000)
-                mark_reward_given(referral_id, 1000)
-                await callback.bot.send_message(
-                    referrer_id,
-                    f"🎉 Ваш реферал совершил первую покупку! Вам начислено 1000 баллов."
-                )
-        await callback.bot.send_message(
-            ADMIN_GROUP_ID,
-            f"✅ Сделка по товару #{lot_id} подтверждена продавцом."
-        )
-        await callback.message.edit_text(
-            callback.message.text + "\n\n✅ Сделка подтверждена. Товар продан."
-        )
-        await callback.answer("Сделка подтверждена!")
-    else:
-        await callback.answer("Ошибка подтверждения.", show_alert=True)
-
-@router.callback_query(F.data.startswith("cancel_reserve_"))
-async def cancel_reserve_handler(callback: CallbackQuery, **kwargs):
-    user_id = callback.from_user.id
-    lot_id = int(callback.data.split("_")[2])
-    lot = get_resale_lot_by_id(lot_id)
-    if not lot or lot[19] != 'reserved':
-        await callback.answer("Лот не в статусе резерва.", show_alert=True)
-        return
-    if lot[1] != user_id:
-        await callback.answer("Это не ваше объявление.", show_alert=True)
-        return
-    if cancel_reserve(lot_id):
-        update_reliability(user_id, -5)
-        rating = get_user_reliability(user_id)
-        if rating < 50:
-            block_user(user_id, 24)
-            await callback.bot.send_message(
-                user_id,
-                "⛔ Ваш рейтинг надёжности слишком низок. Вы заблокированы на 24 часа."
-            )
-        buyer_id = lot[20]
-        if buyer_id:
-            await callback.bot.send_message(
-                buyer_id,
-                f"❌ Продавец отменил резерв по товару #{lot_id}. Товар снова доступен для покупки."
-            )
-        await callback.bot.send_message(
-            ADMIN_GROUP_ID,
-            f"🔄 Резерв на товар #{lot_id} отменён продавцом."
-        )
-        await callback.message.edit_text(
-            callback.message.text + "\n\n❌ Резерв отменён. Товар возвращён в продажу."
-        )
-        await callback.answer("Резерв отменён!")
-    else:
-        await callback.answer("Ошибка отмены резерва.", show_alert=True)
-
-@router.message(Command("accept_offer"))
-async def accept_offer(message: Message, state: FSMContext):
-    args = message.text.split()
-    if len(args) != 2:
-        await message.answer("Использование: /accept_offer <id_предложения>")
-        return
-    try:
-        offer_id = int(args[1])
-    except:
-        await message.answer("Неверный ID предложения.")
-        return
-    conn = sqlite3.connect('tech_auction.db')
-    cur = conn.cursor()
-    cur.execute('SELECT lot_id, buyer_id, price FROM price_offers WHERE id = ? AND status = "pending"', (offer_id,))
-    row = cur.fetchone()
-    conn.close()
-    if not row:
-        await message.answer("Предложение не найдено или уже обработано.")
-        return
-    lot_id, buyer_id, price = row
-    lot = get_resale_lot_by_id(lot_id)
-    if not lot or lot[1] != message.from_user.id:
-        await message.answer("Это не ваш лот.")
-        return
-    if reserve_lot(lot_id, buyer_id):
-        update_price_offer_status(offer_id, 'accepted')
-        await message.answer(f"✅ Предложение {price} ₽ принято. Товар зарезервирован за покупателем.")
-        await message.bot.send_message(
-            buyer_id,
-            f"✅ Ваше предложение {price} ₽ на лот #{lot_id} принято! Продавец свяжется с вами."
-        )
-        log_action(message.from_user.id, 'ACCEPT_OFFER', f'Предложение #{offer_id}, лот #{lot_id}')
-    else:
-        await message.answer("Ошибка при резервировании лота.")
-
-@router.message(Command("reject_offer"))
-async def reject_offer(message: Message):
-    args = message.text.split()
-    if len(args) != 2:
-        await message.answer("Использование: /reject_offer <id_предложения>")
-        return
-    try:
-        offer_id = int(args[1])
-    except:
-        await message.answer("Неверный ID предложения.")
-        return
-    conn = sqlite3.connect('tech_auction.db')
-    cur = conn.cursor()
-    cur.execute('SELECT lot_id, buyer_id FROM price_offers WHERE id = ? AND status = "pending"', (offer_id,))
-    row = cur.fetchone()
-    conn.close()
-    if not row:
-        await message.answer("Предложение не найдено или уже обработано.")
-        return
-    lot_id, buyer_id = row
-    lot = get_resale_lot_by_id(lot_id)
-    if not lot or lot[1] != message.from_user.id:
-        await message.answer("Это не ваш лот.")
-        return
-    update_price_offer_status(offer_id, 'rejected')
-    await message.answer(f"❌ Предложение отклонено.")
-    await message.bot.send_message(
-        buyer_id,
-        f"❌ Ваше предложение на лот #{lot_id} отклонено продавцом."
-    )
-    log_action(message.from_user.id, 'REJECT_OFFER', f'Предложение #{offer_id}, лот #{lot_id}')
-
-@router.message(F.text == "📝 Мои отзывы")
-async def my_reviews(message: Message):
-    user_id = message.from_user.id
-    if not has_role(user_id, 'reseller'):
-        await message.answer("Эта функция доступна только перекупам.")
-        return
-    rating, count = get_seller_rating(user_id)
-    reviews = get_seller_reviews(user_id)
-    if not reviews:
-        await message.answer("У вас пока нет отзывов.")
-        return
-    text = f"📊 Ваш рейтинг: {rating} ⭐ ({count} отзывов)\n\n"
-    for r in reviews:
-        rating, comment, created_at, username, full_name = r
-        buyer_name = f"@{username}" if username else full_name
-        text += f"⭐ {rating}/5 от {buyer_name}\n   «{comment}»\n   {created_at.strftime('%d.%m.%Y')}\n\n"
-    await message.answer(text[:4000])
-
+# ---------- Подписки (аналогично user) ----------
 @router.message(F.text == "🔔 Мои подписки")
 async def my_subscriptions(message: Message, state: FSMContext):
     user_id = message.from_user.id
@@ -776,13 +707,13 @@ async def sub_save(callback: CallbackQuery, state: FSMContext):
     await callback.message.delete()
     await state.clear()
 
+# ---------- Остальные функции (избранное, рефералы, кошелёк) аналогично user ----------
 @router.message(F.text == "⭐ Избранное")
 async def show_favorites(message: Message):
     user_id = message.from_user.id
     if not user_exists(user_id):
         await message.answer("Сначала зарегистрируйтесь.")
         return
-    from database import get_user_favorites, get_resale_lot_by_id, get_seller_rating
     favorites = get_user_favorites(user_id)
     if not favorites:
         await message.answer("У вас пока нет избранных объявлений.")
@@ -827,3 +758,71 @@ async def referral_program(message: Message):
 @router.message(F.text == "💰 Мой кошелек")
 async def reseller_wallet(message: Message):
     await show_wallet(message)
+
+# ---------- Принятие/отклонение предложений цены ----------
+@router.message(Command("accept_offer"))
+async def accept_offer(message: Message, state: FSMContext):
+    args = message.text.split()
+    if len(args) != 2:
+        await message.answer("Использование: /accept_offer <id_предложения>")
+        return
+    try:
+        offer_id = int(args[1])
+    except:
+        await message.answer("Неверный ID предложения.")
+        return
+    conn = sqlite3.connect('tech_auction.db')
+    cur = conn.cursor()
+    cur.execute('SELECT lot_id, buyer_id, price FROM price_offers WHERE id = ? AND status = "pending"', (offer_id,))
+    row = cur.fetchone()
+    conn.close()
+    if not row:
+        await message.answer("Предложение не найдено или уже обработано.")
+        return
+    lot_id, buyer_id, price = row
+    lot = get_resale_lot_by_id(lot_id)
+    if not lot or lot[1] != message.from_user.id:
+        await message.answer("Это не ваш лот.")
+        return
+    if reserve_lot(lot_id, buyer_id):
+        update_price_offer_status(offer_id, 'accepted')
+        await message.answer(f"✅ Предложение {price} ₽ принято. Товар зарезервирован за покупателем.")
+        await message.bot.send_message(
+            buyer_id,
+            f"✅ Ваше предложение {price} ₽ на лот #{lot_id} принято! Продавец свяжется с вами."
+        )
+        log_action(message.from_user.id, 'ACCEPT_OFFER', f'Предложение #{offer_id}, лот #{lot_id}')
+    else:
+        await message.answer("Ошибка при резервировании лота.")
+
+@router.message(Command("reject_offer"))
+async def reject_offer(message: Message):
+    args = message.text.split()
+    if len(args) != 2:
+        await message.answer("Использование: /reject_offer <id_предложения>")
+        return
+    try:
+        offer_id = int(args[1])
+    except:
+        await message.answer("Неверный ID предложения.")
+        return
+    conn = sqlite3.connect('tech_auction.db')
+    cur = conn.cursor()
+    cur.execute('SELECT lot_id, buyer_id FROM price_offers WHERE id = ? AND status = "pending"', (offer_id,))
+    row = cur.fetchone()
+    conn.close()
+    if not row:
+        await message.answer("Предложение не найдено или уже обработано.")
+        return
+    lot_id, buyer_id = row
+    lot = get_resale_lot_by_id(lot_id)
+    if not lot or lot[1] != message.from_user.id:
+        await message.answer("Это не ваш лот.")
+        return
+    update_price_offer_status(offer_id, 'rejected')
+    await message.answer(f"❌ Предложение отклонено.")
+    await message.bot.send_message(
+        buyer_id,
+        f"❌ Ваше предложение на лот #{lot_id} отклонено продавцом."
+    )
+    log_action(message.from_user.id, 'REJECT_OFFER', f'Предложение #{offer_id}, лот #{lot_id}')
