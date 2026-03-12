@@ -50,7 +50,7 @@ async def process_comment(message: Message, state: FSMContext):
     seller_id = data['seller_id']
     rating = data['rating']
     buyer_id = message.from_user.id
-    
+
     if add_review(seller_id, buyer_id, lot_id, rating, comment):
         await message.answer("✅ Спасибо! Ваш отзыв сохранён.")
     else:
@@ -60,11 +60,6 @@ async def process_comment(message: Message, state: FSMContext):
 @router.message(F.text == "📝 Мои отзывы")
 async def my_reviews(message: Message):
     user_id = message.from_user.id
-    # Проверка, что пользователь является перекупом (если нужно)
-    # from database import has_role
-    # if not has_role(user_id, 'reseller'):
-    #     await message.answer("Эта функция доступна только перекупам.")
-    #     return
     rating, count = get_seller_rating(user_id)
     reviews = get_seller_reviews(user_id)
     if not reviews:
@@ -74,7 +69,6 @@ async def my_reviews(message: Message):
     for r in reviews:
         rating_val, comment, created_at, username, full_name = r
         buyer_name = f"@{username}" if username else full_name
-        # Преобразуем строку в datetime
         dt = datetime.fromisoformat(created_at.replace(' ', 'T'))
         text += f"⭐ {rating_val}/5 от {buyer_name}\n   «{comment}»\n   {dt.strftime('%d.%m.%Y')}\n\n"
     await message.answer(text[:4000])
