@@ -44,7 +44,7 @@ async def show_resale_lots(message: Message):
         user_id = message.from_user.id
         fav = is_favorite(user_id, lot_id)
         
-        # Исправление: преобразуем строку даты в datetime
+        # Преобразуем строку даты в datetime
         dt = datetime.fromisoformat(created_at.replace(' ', 'T'))
         
         caption = (
