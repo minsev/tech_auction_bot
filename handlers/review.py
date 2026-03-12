@@ -74,7 +74,7 @@ async def my_reviews(message: Message):
     for r in reviews:
         rating_val, comment, created_at, username, full_name = r
         buyer_name = f"@{username}" if username else full_name
-        # Исправление: преобразуем строку в datetime
+        # Преобразуем строку в datetime
         dt = datetime.fromisoformat(created_at.replace(' ', 'T'))
         text += f"⭐ {rating_val}/5 от {buyer_name}\n   «{comment}»\n   {dt.strftime('%d.%m.%Y')}\n\n"
     await message.answer(text[:4000])
