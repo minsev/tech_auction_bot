@@ -12,7 +12,7 @@ async def main():
     init_db()
     bot = Bot(token=BOT_TOKEN)
     dp = Dispatcher()
-    
+
     dp.include_router(common.router)
     dp.include_router(user.router)
     dp.include_router(reseller.router)
@@ -23,7 +23,7 @@ async def main():
     dp.include_router(support.router)
     dp.include_router(complaint.router)
     dp.include_router(top.router)
-    
+
     await bot.delete_webhook(drop_pending_updates=True)
     await dp.start_polling(bot)
 
