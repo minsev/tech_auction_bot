@@ -276,7 +276,80 @@ def init_db():
     conn.close()
 
     add_default_categories()
-    populate_popular_data()
+    def populate_popular_data():
+    conn = sqlite3.connect('tech_auction.db')
+    cur = conn.cursor()
+
+    # Убедимся, что категория "Смартфоны" существует (обычно id=2)
+    cur.execute("SELECT id FROM categories WHERE name='Смартфоны'")
+    row = cur.fetchone()
+    if not row:
+        # Если категории нет, создаём
+        cur.execute("INSERT INTO categories (name) VALUES ('Смартфоны')")
+        smartphone_cat_id = cur.lastrowid
+    else:
+        smartphone_cat_id = row[0]
+
+    # Добавляем бренд Apple
+    cur.execute("INSERT OR IGNORE INTO brands (category_id, name) VALUES (?, 'Apple')", (smartphone_cat_id,))
+    apple_id = cur.execute("SELECT id FROM brands WHERE name='Apple' AND category_id=?", (smartphone_cat_id,)).fetchone()[0]
+
+    # Словарь моделей iPhone: (название модели, список цветов, список объёмов памяти)
+    iphone_models = {
+        "iPhone SE (1-го поколения)": (["Серый космос", "Серебристый", "Золотой", "Розовое золото"], ["16GB", "32GB", "64GB", "128GB"]),
+        "iPhone SE (2-го поколения)": (["Чёрный", "Белый", "Красный (PRODUCT)RED"], ["64GB", "128GB", "256GB"]),
+        "iPhone SE (3-го поколения)": (["Полночь", "Сияющая звезда", "Красный (PRODUCT)RED"], ["64GB", "128GB", "256GB"]),
+        "iPhone 6": (["Серый космос", "Серебристый", "Золотой"], ["16GB", "32GB", "64GB", "128GB"]),
+        "iPhone 6 Plus": (["Серый космос", "Серебристый", "Золотой"], ["16GB", "32GB", "64GB", "128GB"]),
+        "iPhone 6s": (["Серый космос", "Серебристый", "Золотой", "Розовое золото"], ["16GB", "32GB", "64GB", "128GB"]),
+        "iPhone 6s Plus": (["Серый космос", "Серебристый", "Золотой", "Розовое золото"], ["16GB", "32GB", "64GB", "128GB"]),
+        "iPhone 7": (["Чёрный", "Чёрный оникс", "Серебристый", "Золотой", "Розовое золото", "Красный (PRODUCT)RED"], ["32GB", "128GB", "256GB"]),
+        "iPhone 7 Plus": (["Чёрный", "Чёрный оникс", "Серебристый", "Золотой", "Розовое золото", "Красный (PRODUCT)RED"], ["32GB", "128GB", "256GB"]),
+        "iPhone 8": (["Серый космос", "Серебристый", "Золотой", "Красный (PRODUCT)RED"], ["64GB", "128GB", "256GB"]),
+        "iPhone 8 Plus": (["Серый космос", "Серебристый", "Золотой", "Красный (PRODUCT)RED"], ["64GB", "128GB", "256GB"]),
+        "iPhone X": (["Серый космос", "Серебристый"], ["64GB", "256GB"]),
+        "iPhone XR": (["Чёрный", "Белый", "Синий", "Жёлтый", "Коралловый", "Красный (PRODUCT)RED"], ["64GB", "128GB", "256GB"]),
+        "iPhone XS": (["Серый космос", "Серебристый", "Золотой"], ["64GB", "256GB", "512GB"]),
+        "iPhone XS Max": (["Серый космос", "Серебристый", "Золотой"], ["64GB", "256GB", "512GB"]),
+        "iPhone 11": (["Чёрный", "Белый", "Фиолетовый", "Жёлтый", "Зелёный", "Красный (PRODUCT)RED"], ["64GB", "128GB", "256GB"]),
+        "iPhone 11 Pro": (["Серый космос", "Серебристый", "Золотой", "Тёмно-зелёный"], ["64GB", "256GB", "512GB"]),
+        "iPhone 11 Pro Max": (["Серый космос", "Серебристый", "Золотой", "Тёмно-зелёный"], ["64GB", "256GB", "512GB"]),
+        "iPhone 12 mini": (["Чёрный", "Белый", "Красный (PRODUCT)RED", "Зелёный", "Синий", "Фиолетовый"], ["64GB", "128GB", "256GB"]),
+        "iPhone 12": (["Чёрный", "Белый", "Красный (PRODUCT)RED", "Зелёный", "Синий", "Фиолетовый"], ["64GB", "128GB", "256GB"]),
+        "iPhone 12 Pro": (["Серебристый", "Графитовый", "Золотой", "Тихоокеанский синий"], ["128GB", "256GB", "512GB"]),
+        "iPhone 12 Pro Max": (["Серебристый", "Графитовый", "Золотой", "Тихоокеанский синий"], ["128GB", "256GB", "512GB"]),
+        "iPhone 13 mini": (["Полночь", "Сияющая звезда", "Синий", "Розовый", "Красный (PRODUCT)RED", "Зелёный"], ["128GB", "256GB", "512GB"]),
+        "iPhone 13": (["Полночь", "Сияющая звезда", "Синий", "Розовый", "Красный (PRODUCT)RED", "Зелёный"], ["128GB", "256GB", "512GB"]),
+        "iPhone 13 Pro": (["Графитовый", "Золотой", "Серебристый", "Небесно-синий", "Альпийский зелёный"], ["128GB", "256GB", "512GB", "1TB"]),
+        "iPhone 13 Pro Max": (["Графитовый", "Золотой", "Серебристый", "Небесно-синий", "Альпийский зелёный"], ["128GB", "256GB", "512GB", "1TB"]),
+        "iPhone 14": (["Полночь", "Сияющая звезда", "Синий", "Фиолетовый", "Красный (PRODUCT)RED", "Жёлтый"], ["128GB", "256GB", "512GB"]),
+        "iPhone 14 Plus": (["Полночь", "Сияющая звезда", "Синий", "Фиолетовый", "Красный (PRODUCT)RED", "Жёлтый"], ["128GB", "256GB", "512GB"]),
+        "iPhone 14 Pro": (["Серебристый", "Золотой", "Тёмно-фиолетовый", "Космический чёрный"], ["128GB", "256GB", "512GB", "1TB"]),
+        "iPhone 14 Pro Max": (["Серебристый", "Золотой", "Тёмно-фиолетовый", "Космический чёрный"], ["128GB", "256GB", "512GB", "1TB"]),
+        "iPhone 15": (["Чёрный", "Синий", "Зелёный", "Жёлтый", "Розовый"], ["128GB", "256GB", "512GB"]),
+        "iPhone 15 Plus": (["Чёрный", "Синий", "Зелёный", "Жёлтый", "Розовый"], ["128GB", "256GB", "512GB"]),
+        "iPhone 15 Pro": (["Чёрный титан", "Белый титан", "Синий титан", "Натуральный титан"], ["128GB", "256GB", "512GB", "1TB"]),
+        "iPhone 15 Pro Max": (["Чёрный титан", "Белый титан", "Синий титан", "Натуральный титан"], ["256GB", "512GB", "1TB"]),
+    }
+
+    for model_name, (colors, storages) in iphone_models.items():
+        # Вставляем модель
+        cur.execute("INSERT OR IGNORE INTO models (brand_id, name) VALUES (?, ?)", (apple_id, model_name))
+        model_id = cur.execute("SELECT id FROM models WHERE brand_id=? AND name=?", (apple_id, model_name)).fetchone()[0]
+
+        # Вставляем цвета
+        for color in colors:
+            cur.execute("INSERT OR IGNORE INTO specs (model_id, spec_type, spec_value) VALUES (?, 'color', ?)",
+                        (model_id, color))
+
+        # Вставляем объёмы памяти
+        for storage in storages:
+            cur.execute("INSERT OR IGNORE INTO specs (model_id, spec_type, spec_value) VALUES (?, 'storage', ?)",
+                        (model_id, storage))
+
+    conn.commit()
+    conn.close()
+    print("✅ База данных iPhone успешно заполнена.")
     start_background_tasks()
 
 
