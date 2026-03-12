@@ -285,7 +285,6 @@ async def req_defects_toggle(callback: CallbackQuery, state: FSMContext):
     data = await state.get_data()
     defects_list = data.get('defects_list', [])
     if defect == "Другое":
-        # Можно предложить ввести свой вариант
         await callback.message.answer("Введите описание дефекта текстом:")
         await state.set_state(BuyoutRequestCreation.defects_custom)
     else:
@@ -294,10 +293,13 @@ async def req_defects_toggle(callback: CallbackQuery, state: FSMContext):
         else:
             defects_list.append(defect)
         await state.update_data(defects_list=defects_list)
-        # Обновляем клавиатуру
-        await callback.message.edit_reply_markup(
-            reply_markup=defects_inline_keyboard()
-        )
+        # Безопасно обновляем клавиатуру, игнорируя возможные ошибки
+        try:
+            await callback.message.edit_reply_markup(
+                reply_markup=defects_inline_keyboard()
+            )
+        except Exception:
+            pass
     await callback.answer()
 
 @router.callback_query(BuyoutRequestCreation.defects, F.data == "defect_done")
